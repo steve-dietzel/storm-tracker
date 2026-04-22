@@ -20,7 +20,7 @@
           "geo_location_prefix": "geo_location Domain Prefix"
         },
         "data_description": {
-          "geo_location_prefix": "Only geo_location entities whose platform matches this prefix will be tracked (e.g. \"blitzortung\")."
+          "geo_location_prefix": "Only geo_location entities matching this prefix will be tracked. Checked against platform, entity ID, and source attribute (e.g. \"blitzortung\")."
         }
       },
       "timing": {
@@ -57,7 +57,7 @@
           "geo_location_prefix": "geo_location Domain Prefix"
         },
         "data_description": {
-          "geo_location_prefix": "Only geo_location entities whose platform matches this prefix will be tracked (e.g. \"blitzortung\")."
+          "geo_location_prefix": "Only geo_location entities matching this prefix will be tracked. Checked against platform, entity ID, and source attribute (e.g. \"blitzortung\")."
         }
       },
       "timing": {

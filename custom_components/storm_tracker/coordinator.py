@@ -212,16 +212,24 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
 
         for state in all_geo:
             # Platform filter — geo_location events are transient and typically
-            # have no entity registry entry, so we check both the registry
-            # platform and whether the entity_id slug starts with the prefix.
+            # have no entity registry entry.  We check three things in order:
+            #   1. entity registry platform (e.g. "blitzortung")
+            #   2. entity_id slug        (e.g. "lightning_strike_*")
+            #   3. source attribute      (e.g. source: "blitzortung")
+            # Any one match is sufficient.
             reg_entry = ent_reg.async_get(state.entity_id)
-            platform = (reg_entry.platform if reg_entry else "").lower()
-            slug = state.entity_id.split(".", 1)[1] if "." in state.entity_id else ""
+            platform    = (reg_entry.platform if reg_entry else "").lower()
+            slug        = state.entity_id.split(".", 1)[1] if "." in state.entity_id else ""
+            source_attr = state.attributes.get("source", "").lower()
 
-            if not (platform.startswith(prefix) or slug.startswith(prefix)):
+            if not (
+                platform.startswith(prefix)
+                or slug.startswith(prefix)
+                or source_attr.startswith(prefix)
+            ):
                 _LOGGER.debug(
-                    "Skipping %s — platform=%r slug=%r does not match prefix %r",
-                    state.entity_id, platform, slug, prefix,
+                    "Skipping %s — platform=%r slug=%r source=%r does not match prefix %r",
+                    state.entity_id, platform, slug, source_attr, prefix,
                 )
                 skipped_prefix += 1
                 continue
