@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     CONF_UPDATE_INTERVAL,
@@ -16,6 +17,16 @@ from .const import (
 from .coordinator import StormTrackerCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+CARD_URL  = "/storm_tracker_card/storm-tracker-card.js"
+CARD_FILE = os.path.join(os.path.dirname(__file__), "storm-tracker-card.js")
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the Lovelace card as a static path (runs once on first load)."""
+    hass.http.register_static_path(CARD_URL, CARD_FILE, cache_headers=False)
+    _LOGGER.info("Storm Tracker card available at %s", CARD_URL)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

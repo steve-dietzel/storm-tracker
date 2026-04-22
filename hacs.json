@@ -1,10 +1,12 @@
 {
   "name": "Storm Tracker",
+  "category": "integration",
   "description": "Sector-based lightning storm situational awareness for Home Assistant",
   "domains": ["sensor"],
   "iot_class": "local_polling",
   "homeassistant": "2024.1.0",
   "documentation": "https://github.com/steve-dietzel/storm-tracker",
   "issue_tracker": "https://github.com/steve-dietzel/storm-tracker/issues",
-  "codeowners": ["@steve-dietzel"]
+  "codeowners": ["@steve-dietzel"],
+  "render_readme": true
 }
