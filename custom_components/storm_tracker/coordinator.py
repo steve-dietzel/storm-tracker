@@ -200,26 +200,49 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
         prefix = self.geo_location_prefix.lower()
         cutoff = dt_util.utcnow() - timedelta(minutes=self.time_window_minutes)
 
+        all_geo = self.hass.states.async_all("geo_location")
+        _LOGGER.debug(
+            "Poll: found %d total geo_location entities, prefix filter=%r, cutoff=%s",
+            len(all_geo), prefix, cutoff.isoformat(),
+        )
+
         strikes: list[_Strike] = []
-        for state in self.hass.states.async_all("geo_location"):
-            # Platform filter
+        skipped_prefix = 0
+        skipped_window = 0
+
+        for state in all_geo:
+            # Platform filter — geo_location events are transient and typically
+            # have no entity registry entry, so we check both the registry
+            # platform and whether the entity_id slug starts with the prefix.
             reg_entry = ent_reg.async_get(state.entity_id)
             platform = (reg_entry.platform if reg_entry else "").lower()
-            entity_id_prefix = (
-                state.entity_id.split(".")[1].split("_")[0]
-                if "." in state.entity_id
-                else ""
-            )
-            if not (platform.startswith(prefix) or entity_id_prefix.startswith(prefix)):
+            slug = state.entity_id.split(".", 1)[1] if "." in state.entity_id else ""
+
+            if not (platform.startswith(prefix) or slug.startswith(prefix)):
+                _LOGGER.debug(
+                    "Skipping %s — platform=%r slug=%r does not match prefix %r",
+                    state.entity_id, platform, slug, prefix,
+                )
+                skipped_prefix += 1
                 continue
 
             # Time window filter
             last_changed = state.last_changed
             if last_changed is None or last_changed < cutoff:
+                _LOGGER.debug(
+                    "Skipping %s — last_changed %s is outside window",
+                    state.entity_id,
+                    last_changed.isoformat() if last_changed else "None",
+                )
+                skipped_window += 1
                 continue
 
             strikes.append((state.entity_id, dict(state.attributes), last_changed))
 
+        _LOGGER.info(
+            "Snapshot: %d strikes accepted, %d skipped (prefix), %d skipped (time window)",
+            len(strikes), skipped_prefix, skipped_window,
+        )
         return strikes
 
     def _compute(self, snapshot: list[_Strike]) -> StormTrackerData:
@@ -310,4 +333,11 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
                     data.closest_sector = SECTOR_LABELS[idx]
                     break
 
+        _LOGGER.info(
+            "Compute: %d total strikes, %d active sectors, closest=%.1f (%s)",
+            data.total_strike_count,
+            data.active_sector_count,
+            data.closest_distance or 0,
+            data.closest_sector or "none",
+        )
         return data
