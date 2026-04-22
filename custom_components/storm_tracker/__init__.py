@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
@@ -24,7 +25,9 @@ CARD_FILE = os.path.join(os.path.dirname(__file__), "storm-tracker-card.js")
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register the Lovelace card as a static path (runs once on first load)."""
-    hass.http.register_static_path(CARD_URL, CARD_FILE, cache_headers=False)
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(CARD_URL, CARD_FILE, cache_headers=False)]
+    )
     _LOGGER.info("Storm Tracker card available at %s", CARD_URL)
     return True
 
