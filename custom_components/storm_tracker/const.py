@@ -1,0 +1,78 @@
+"""Constants for Storm Tracker."""
+
+DOMAIN = "storm_tracker"
+
+PLATFORMS = ["sensor"]
+
+# ---------------------------------------------------------------------------
+# Sector definitions
+# ---------------------------------------------------------------------------
+
+SECTORS = [
+    {"index": 0, "label": "N",  "center": 0.0,   "range": (337.5, 22.5)},
+    {"index": 1, "label": "NE", "center": 45.0,  "range": (22.5,  67.5)},
+    {"index": 2, "label": "E",  "center": 90.0,  "range": (67.5,  112.5)},
+    {"index": 3, "label": "SE", "center": 135.0, "range": (112.5, 157.5)},
+    {"index": 4, "label": "S",  "center": 180.0, "range": (157.5, 202.5)},
+    {"index": 5, "label": "SW", "center": 225.0, "range": (202.5, 247.5)},
+    {"index": 6, "label": "W",  "center": 270.0, "range": (247.5, 292.5)},
+    {"index": 7, "label": "NW", "center": 315.0, "range": (292.5, 337.5)},
+]
+
+SECTOR_LABELS = [s["label"] for s in SECTORS]  # ["N", "NE", ..., "NW"]
+
+# ---------------------------------------------------------------------------
+# Trend states
+# ---------------------------------------------------------------------------
+
+TREND_APPROACHING = "approaching"
+TREND_RECEDING    = "receding"
+TREND_STATIONARY  = "stationary"
+TREND_CLEAR       = "clear"
+
+TREND_STATES = [TREND_APPROACHING, TREND_RECEDING, TREND_STATIONARY, TREND_CLEAR]
+
+# ---------------------------------------------------------------------------
+# Config / options keys
+# ---------------------------------------------------------------------------
+
+CONF_UNIT_SYSTEM           = "unit_system"
+CONF_GEO_LOCATION_PREFIX   = "geo_location_prefix"
+CONF_TIME_WINDOW_MINUTES   = "time_window_minutes"
+CONF_UPDATE_INTERVAL       = "update_interval_seconds"
+CONF_APPROACH_THRESHOLD    = "approach_threshold"
+
+# ---------------------------------------------------------------------------
+# Unit system values
+# ---------------------------------------------------------------------------
+
+UNIT_IMPERIAL = "imperial"
+UNIT_METRIC   = "metric"
+UNIT_OPTIONS  = [UNIT_IMPERIAL, UNIT_METRIC]
+
+UNIT_MILES      = "mi"
+UNIT_KILOMETERS = "km"
+
+# ---------------------------------------------------------------------------
+# Default values
+# ---------------------------------------------------------------------------
+
+DEFAULT_NAME               = "Storm Tracker"
+DEFAULT_UNIT_SYSTEM        = UNIT_IMPERIAL
+DEFAULT_GEO_LOCATION_PREFIX = "blitzortung"
+DEFAULT_TIME_WINDOW_MINUTES = 30
+DEFAULT_UPDATE_INTERVAL    = 30
+DEFAULT_APPROACH_THRESHOLD = 10.0
+
+# ---------------------------------------------------------------------------
+# Minimum data points required for a meaningful trend calculation
+# ---------------------------------------------------------------------------
+
+MIN_TREND_POINTS = 3
+
+# ---------------------------------------------------------------------------
+# Earth radius constants (for Haversine fallback)
+# ---------------------------------------------------------------------------
+
+EARTH_RADIUS_KM = 6371.0
+EARTH_RADIUS_MI = 3958.8
