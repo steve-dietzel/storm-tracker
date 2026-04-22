@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 from math import atan2, cos, pi, radians, sin, sqrt
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -34,6 +35,9 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Type alias for a pre-snapshotted strike record
+_Strike = tuple[str, dict[str, Any], datetime]
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +95,9 @@ def _haversine(
         sin(dlat / 2) ** 2
         + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
     )
+    # Clamp to [0, 1] to guard against floating-point values slightly outside
+    # the domain of sqrt, which would raise ValueError for near-antipodal points.
+    a = max(0.0, min(1.0, a))
     return r * 2 * atan2(sqrt(a), sqrt(1 - a))
 
 
@@ -149,7 +156,7 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
     # Properties resolved from entry data + options (options take priority)
     # ------------------------------------------------------------------
 
-    def _opt(self, key: str, default):
+    def _opt(self, key: str, default: Any) -> Any:
         return self._entry.options.get(key, self._entry.data.get(key, default))
 
     @property
@@ -169,74 +176,93 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
         return float(self._opt(CONF_APPROACH_THRESHOLD, DEFAULT_APPROACH_THRESHOLD))
 
     # ------------------------------------------------------------------
-    # Core update
+    # Core update — two-phase: snapshot on event loop, compute in executor
     # ------------------------------------------------------------------
 
     async def _async_update_data(self) -> StormTrackerData:
-        """Fetch geo_location states and compute sector statistics."""
+        """Snapshot HA state on the event loop, then compute in an executor."""
         try:
-            return await self.hass.async_add_executor_job(self._compute)
+            # Phase 1: read HA state machine on the event loop (thread-unsafe to do elsewhere)
+            snapshot = self._build_snapshot()
+            # Phase 2: pure math — safe to run off the event loop
+            return await self.hass.async_add_executor_job(self._compute, snapshot)
         except Exception as exc:
             raise UpdateFailed(f"Storm Tracker update failed: {exc}") from exc
 
-    def _compute(self) -> StormTrackerData:
-        """Run synchronously (called from executor)."""
-        home_lat: float = self.hass.config.latitude
-        home_lon: float = self.hass.config.longitude
-        imperial: bool = self.unit_system == UNIT_IMPERIAL
-        prefix: str = self.geo_location_prefix.lower()
-        cutoff = dt_util.utcnow() - timedelta(minutes=self.time_window_minutes)
-        threshold = self.approach_threshold
+    def _build_snapshot(self) -> list[_Strike]:
+        """Collect matching geo_location states on the event loop thread.
 
-        # Build sector buffers: index → list of (timestamp_hours_offset, distance)
-        t0: float | None = None
-        sector_points: dict[int, list[tuple[float, float]]] = {i: [] for i in range(8)}
-
+        Returns a list of (entity_id, attributes_copy, last_changed) tuples
+        containing only the data needed for sector math.  Copying attributes
+        avoids holding live State references outside the event loop.
+        """
         ent_reg = er.async_get(self.hass)
+        prefix = self.geo_location_prefix.lower()
+        cutoff = dt_util.utcnow() - timedelta(minutes=self.time_window_minutes)
 
+        strikes: list[_Strike] = []
         for state in self.hass.states.async_all("geo_location"):
-            # --- Platform filter ---
+            # Platform filter
             reg_entry = ent_reg.async_get(state.entity_id)
             platform = (reg_entry.platform if reg_entry else "").lower()
-            # Also accept entity_ids whose domain prefix matches (fallback)
-            entity_id_prefix = state.entity_id.split(".")[1].split("_")[0] if "." in state.entity_id else ""
+            entity_id_prefix = (
+                state.entity_id.split(".")[1].split("_")[0]
+                if "." in state.entity_id
+                else ""
+            )
             if not (platform.startswith(prefix) or entity_id_prefix.startswith(prefix)):
                 continue
 
-            # --- Time window filter ---
+            # Time window filter
             last_changed = state.last_changed
             if last_changed is None or last_changed < cutoff:
                 continue
 
-            # --- Coordinates ---
-            attrs = state.attributes
+            strikes.append((state.entity_id, dict(state.attributes), last_changed))
+
+        return strikes
+
+    def _compute(self, snapshot: list[_Strike]) -> StormTrackerData:
+        """Compute sector statistics from pre-snapshotted strike data.
+
+        Runs in an executor thread — must not access the HA state machine.
+        """
+        home_lat: float = self.hass.config.latitude
+        home_lon: float = self.hass.config.longitude
+        imperial: bool = self.unit_system == UNIT_IMPERIAL
+        threshold = self.approach_threshold
+
+        t0: float | None = None
+        sector_points: dict[int, list[tuple[float, float]]] = {i: [] for i in range(8)}
+
+        for entity_id, attrs, last_changed in snapshot:
+            # Coordinates
             try:
                 strike_lat = float(attrs["latitude"])
                 strike_lon = float(attrs["longitude"])
             except (KeyError, TypeError, ValueError):
-                _LOGGER.debug("Skipping %s — missing lat/lon", state.entity_id)
+                _LOGGER.debug("Skipping %s — missing lat/lon", entity_id)
                 continue
 
-            # --- Distance (with Haversine fallback) ---
+            # Distance (with Haversine fallback)
             raw_dist = attrs.get("distance")
+            distance: float | None = None
             if raw_dist is not None:
                 try:
                     distance = float(raw_dist)
-                    # Convert km→mi if entity reports km and we want imperial
-                    # Blitzortung reports km; convert when imperial is requested
                     if imperial:
                         distance = distance * 0.621371
                 except (TypeError, ValueError):
                     distance = None
 
-            if raw_dist is None or distance is None:
+            if distance is None:
                 distance = _haversine(home_lat, home_lon, strike_lat, strike_lon, imperial)
 
-            # --- Azimuth + sector ---
+            # Azimuth + sector assignment
             az = _azimuth(home_lat, home_lon, strike_lat, strike_lon)
             sector = _sector_index(az)
 
-            # --- Timestamp offset in hours ---
+            # Timestamp offset in hours (relative to first strike seen this cycle)
             ts = last_changed.timestamp()
             if t0 is None:
                 t0 = ts
@@ -244,7 +270,7 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
 
             sector_points[sector].append((hours_offset, distance))
 
-        # --- Build SectorData per sector ---
+        # Build SectorData per sector
         data = StormTrackerData()
         global_distances: list[float] = []
 
@@ -267,7 +293,7 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
             )
             global_distances.extend(distances)
 
-        # --- Summary ---
+        # Summary
         data.total_strike_count = sum(s.strike_count for s in data.sectors.values())
         data.active_sector_count = sum(
             1 for s in data.sectors.values() if s.strike_count > 0
@@ -278,7 +304,6 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
 
         if global_distances:
             data.closest_distance = round(min(global_distances), 1)
-            # Find which sector holds the globally closest strike
             min_dist = data.closest_distance
             for idx, s in data.sectors.items():
                 if s.closest_distance is not None and round(s.closest_distance, 1) == min_dist:

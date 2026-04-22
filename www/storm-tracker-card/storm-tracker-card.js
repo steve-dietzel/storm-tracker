@@ -39,10 +39,20 @@ function compassToSVG(deg) {
   return (deg - 90) * Math.PI / 180;
 }
 
-/** Format a distance value for display. */
+/** Escape a value for safe insertion into HTML/SVG text content or attributes. */
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** Format a distance value for safe display. */
 function fmtDist(val, unit) {
   if (val === null || val === undefined) return '—';
-  return `${val}${unit}`;
+  return `${val}${escHtml(unit)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -147,7 +157,7 @@ class StormTrackerCard extends HTMLElement {
 
   _svgWedges(sectors) {
     return sectors.map((sec, i) => {
-      const color  = this._config.colors[sec.trend] ?? this._config.colors.clear;
+      const color  = escHtml(this._config.colors[sec.trend] ?? this._config.colors.clear);
       const a1     = compassToSVG(i * 45 - 22.5);
       const a2     = compassToSVG(i * 45 + 22.5);
       const x1     = CX + MAX_R * Math.cos(a1);
@@ -229,7 +239,7 @@ class StormTrackerCard extends HTMLElement {
     const itemW = VB / entries.length;
     return entries.map((e, i) => {
       const x = i * itemW + itemW / 2;
-      const color = this._config.colors[e.key] ?? DEFAULT_COLORS[e.key];
+      const color = escHtml(this._config.colors[e.key] ?? DEFAULT_COLORS[e.key]);
       return `<rect x="${x - 16}" y="4" width="12" height="12" rx="2" fill="${color}" stroke="#555" stroke-width="0.5"/>
               <text x="${x}" y="11" dominant-baseline="central" fill="var(--secondary-text-color,#aaa)" font-size="10" font-family="sans-serif">${e.label}</text>`;
     }).join('\n');
@@ -289,7 +299,7 @@ class StormTrackerCard extends HTMLElement {
         }
       </style>
       <ha-card>
-        <div class="card-header">${this._config.title}</div>
+        <div class="card-header">${escHtml(this._config.title)}</div>
         <div class="radar-wrap">
           <svg viewBox="0 0 ${VB} ${totalH}" xmlns="http://www.w3.org/2000/svg">
             <!-- Radar -->
