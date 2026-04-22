@@ -8,9 +8,9 @@
  *   title: Storm Tracker          # optional
  *   rings: [50, 100, 150, 200]    # distance rings in configured units
  *   colors:
- *     approaching: "#ff0000"
- *     receding:    "#ffff00"
- *     stationary:  "#ff8800"
+ *     approaching: "#cc2200"
+ *     receding:    "#0066aa"
+ *     stationary:  "#cc6600"
  *     clear:       "#1e2a1e"
  */
 
@@ -18,10 +18,10 @@ const SECTOR_KEYS  = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 const SECTOR_LABELS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
 const DEFAULT_COLORS = {
-  approaching: '#ff0000',
-  receding:    '#ffff00',
-  stationary:  '#ff8800',
-  clear:       '#1e2a1e',
+  approaching: '#cc2200',   // dark red     — white text readable
+  receding:    '#0066aa',   // steel blue   — white text readable, clearly "safe"
+  stationary:  '#cc6600',   // dark amber   — white text readable
+  clear:       '#1e2a1e',   // dark green   — white text readable
 };
 
 const DEFAULT_RINGS = [50, 100, 150, 200];
@@ -53,6 +53,37 @@ function escHtml(str) {
 function fmtDist(val, unit) {
   if (val === null || val === undefined) return '—';
   return `${val}${escHtml(unit)}`;
+}
+
+/**
+ * Return a legible text color (dark or light) for a given hex background.
+ * Uses perceived luminance so the card stays readable regardless of what
+ * color the user configures.
+ *
+ * Returns '#111111' for light backgrounds, 'rgba(255,255,255,0.95)' for dark.
+ */
+function textColorFor(hex) {
+  // Strip leading # and handle shorthand (#rgb → #rrggbb)
+  let h = hex.replace(/^#/, '');
+  if (h.length === 3) {
+    h = h.split('').map(c => c + c).join('');
+  }
+  if (h.length !== 6) return 'rgba(255,255,255,0.95)';
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  // W3C perceived luminance formula
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.5 ? '#111111' : 'rgba(255,255,255,0.95)';
+}
+
+/**
+ * Return a slightly dimmed version of textColorFor for secondary labels
+ * (e.g. distance line beneath strike count).
+ */
+function textColorForSecondary(hex) {
+  const base = textColorFor(hex);
+  return base === '#111111' ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.65)';
 }
 
 // ---------------------------------------------------------------------------
@@ -214,14 +245,20 @@ class StormTrackerCard extends HTMLElement {
       if (sec.count > 0) {
         const dx = CX + DATA_R * Math.cos(ca);
         const dy = CY + DATA_R * Math.sin(ca);
+
+        // Resolve wedge color to determine readable text color
+        const bgColor   = this._config.colors[sec.trend] ?? this._config.colors.clear;
+        const textPri   = escHtml(textColorFor(bgColor));
+        const textSec   = escHtml(textColorForSecondary(bgColor));
+
         dataLabel =
           `<text x="${dx.toFixed(1)}" y="${(dy - 7).toFixed(1)}" ` +
           `text-anchor="middle" dominant-baseline="central" ` +
-          `fill="rgba(255,255,255,0.95)" ` +
+          `fill="${textPri}" ` +
           `font-size="11" font-weight="600" font-family="sans-serif">${sec.count}</text>\n` +
           `<text x="${dx.toFixed(1)}" y="${(dy + 8).toFixed(1)}" ` +
           `text-anchor="middle" dominant-baseline="central" ` +
-          `fill="rgba(255,255,255,0.65)" ` +
+          `fill="${textSec}" ` +
           `font-size="9" font-family="sans-serif">${fmtDist(sec.closest, sec.unit)}</text>`;
       }
 
