@@ -1,7 +1,7 @@
 {
   "domain": "storm_tracker",
   "name": "Storm Tracker",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "config_flow": true,
   "documentation": "https://github.com/steve-dietzel/storm-tracker",
   "issue_tracker": "https://github.com/steve-dietzel/storm-tracker/issues",
