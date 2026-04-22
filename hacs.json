@@ -1,0 +1,10 @@
+{
+  "name": "Storm Tracker",
+  "description": "Sector-based lightning storm situational awareness for Home Assistant",
+  "domains": ["sensor"],
+  "iot_class": "local_polling",
+  "homeassistant": "2024.1.0",
+  "documentation": "https://github.com/YOUR_USERNAME/storm-tracker",
+  "issue_tracker": "https://github.com/YOUR_USERNAME/storm-tracker/issues",
+  "codeowners": ["@YOUR_USERNAME"]
+}
