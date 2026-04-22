@@ -102,7 +102,13 @@ def _haversine(
 
 
 def _linear_slope(points: list[tuple[float, float]]) -> float | None:
-    """Return slope of linear regression on (x, y) pairs, or None if degenerate."""
+    """Return slope of linear regression on (x, y) pairs, or None if degenerate.
+
+    Points are (hours_offset, distance) where hours_offset is always >= 0,
+    anchored to the oldest strike in the snapshot.  A negative slope means
+    distance is decreasing over time → storm approaching.  A positive slope
+    means distance is increasing → storm receding.
+    """
     n = len(points)
     if n < MIN_TREND_POINTS:
         return None
@@ -120,7 +126,13 @@ def _linear_slope(points: list[tuple[float, float]]) -> float | None:
 def _trend_state(
     points: list[tuple[float, float]], threshold: float
 ) -> str:
-    """Compute trend state from (timestamp_hours, distance) pairs."""
+    """Compute trend state from (hours_offset, distance) pairs.
+
+    Slope sign convention:
+      negative slope → distance decreasing → APPROACHING
+      positive slope → distance increasing → RECEDING
+      |slope| < threshold → STATIONARY
+    """
     count = len(points)
     if count == 0:
         return TREND_CLEAR
@@ -257,13 +269,27 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
         """Compute sector statistics from pre-snapshotted strike data.
 
         Runs in an executor thread — must not access the HA state machine.
+
+        Timestamp anchoring: t0 is set to the OLDEST strike in the snapshot so
+        that hours_offset is always >= 0 and increases toward the present.  This
+        ensures the linear regression slope has the correct sign:
+          negative slope → distance decreasing over time → APPROACHING
+          positive slope → distance increasing over time → RECEDING
         """
         home_lat: float = self.hass.config.latitude
         home_lon: float = self.hass.config.longitude
         imperial: bool = self.unit_system == UNIT_IMPERIAL
         threshold = self.approach_threshold
 
-        t0: float | None = None
+        # Anchor t0 to the oldest strike so hours_offset is always >= 0.
+        # Using the first-seen entity (original code) produced negative offsets
+        # whenever iteration order didn't match chronological order, which
+        # corrupted the regression slope sign and flipped approaching/receding.
+        if snapshot:
+            t0 = min(last_changed.timestamp() for _, _, last_changed in snapshot)
+        else:
+            t0 = 0.0
+
         sector_points: dict[int, list[tuple[float, float]]] = {i: [] for i in range(8)}
 
         for entity_id, attrs, last_changed in snapshot:
@@ -275,29 +301,28 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
                 _LOGGER.debug("Skipping %s — missing lat/lon", entity_id)
                 continue
 
-            # Distance (with Haversine fallback)
+            # Distance — Blitzortung provides distance in km via the attribute.
+            # Convert to miles here if imperial; do NOT apply a second conversion
+            # later.  Fall back to Haversine (already unit-aware) if missing.
             raw_dist = attrs.get("distance")
             distance: float | None = None
             if raw_dist is not None:
                 try:
-                    distance = float(raw_dist)
-                    if imperial:
-                        distance = distance * 0.621371
+                    km_dist = float(raw_dist)
+                    distance = km_dist * 0.621371 if imperial else km_dist
                 except (TypeError, ValueError):
                     distance = None
 
             if distance is None:
+                # Haversine fallback — returns miles or km depending on imperial flag
                 distance = _haversine(home_lat, home_lon, strike_lat, strike_lon, imperial)
 
             # Azimuth + sector assignment
             az = _azimuth(home_lat, home_lon, strike_lat, strike_lon)
             sector = _sector_index(az)
 
-            # Timestamp offset in hours (relative to first strike seen this cycle)
-            ts = last_changed.timestamp()
-            if t0 is None:
-                t0 = ts
-            hours_offset = (ts - t0) / 3600.0
+            # Timestamp offset in hours from oldest strike — always >= 0
+            hours_offset = (last_changed.timestamp() - t0) / 3600.0
 
             sector_points[sector].append((hours_offset, distance))
 
