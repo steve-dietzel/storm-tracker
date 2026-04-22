@@ -1,0 +1,85 @@
+{
+  "config": {
+    "step": {
+      "basic": {
+        "title": "Basic Settings",
+        "description": "Configure the integration name and unit system.",
+        "data": {
+          "name": "Name",
+          "unit_system": "Unit System"
+        },
+        "data_description": {
+          "name": "Display name for this integration instance.",
+          "unit_system": "Distances reported in miles (imperial) or kilometers (metric)."
+        }
+      },
+      "data_source": {
+        "title": "Data Source",
+        "description": "Configure which geo_location entities to monitor.",
+        "data": {
+          "geo_location_prefix": "geo_location Domain Prefix"
+        },
+        "data_description": {
+          "geo_location_prefix": "Only geo_location entities whose platform matches this prefix will be tracked (e.g. \"blitzortung\")."
+        }
+      },
+      "timing": {
+        "title": "Timing & Thresholds",
+        "description": "Configure polling interval, history window, and trend sensitivity.",
+        "data": {
+          "time_window_minutes": "History Window (minutes)",
+          "update_interval_seconds": "Update Interval (seconds)",
+          "approach_threshold": "Approach/Recede Threshold (units/hour)"
+        },
+        "data_description": {
+          "time_window_minutes": "How far back to look when computing per-sector statistics.",
+          "update_interval_seconds": "How often to poll geo_location entities for new strikes.",
+          "approach_threshold": "Minimum rate of change (in configured distance units per hour) required to classify a sector as approaching or receding."
+        }
+      }
+    },
+    "error": {
+      "invalid_prefix": "geo_location prefix must be a non-empty string.",
+      "invalid_window": "History window must be a positive integer.",
+      "invalid_interval": "Update interval must be a positive integer.",
+      "invalid_threshold": "Approach threshold must be a positive number."
+    },
+    "abort": {
+      "already_configured": "Storm Tracker is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "data_source": {
+        "title": "Data Source",
+        "description": "Update which geo_location entities to monitor.",
+        "data": {
+          "geo_location_prefix": "geo_location Domain Prefix"
+        },
+        "data_description": {
+          "geo_location_prefix": "Only geo_location entities whose platform matches this prefix will be tracked (e.g. \"blitzortung\")."
+        }
+      },
+      "timing": {
+        "title": "Timing & Thresholds",
+        "description": "Update polling interval, history window, and trend sensitivity.",
+        "data": {
+          "time_window_minutes": "History Window (minutes)",
+          "update_interval_seconds": "Update Interval (seconds)",
+          "approach_threshold": "Approach/Recede Threshold (units/hour)"
+        },
+        "data_description": {
+          "time_window_minutes": "How far back to look when computing per-sector statistics.",
+          "update_interval_seconds": "How often to poll geo_location entities for new strikes.",
+          "approach_threshold": "Minimum rate of change (in configured distance units per hour) required to classify a sector as approaching or receding."
+        }
+      }
+    },
+    "error": {
+      "invalid_prefix": "geo_location prefix must be a non-empty string.",
+      "invalid_window": "History window must be a positive integer.",
+      "invalid_interval": "Update interval must be a positive integer.",
+      "invalid_threshold": "Approach threshold must be a positive number."
+    }
+  }
+}
