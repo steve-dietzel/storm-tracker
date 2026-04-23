@@ -8,6 +8,6 @@
   "codeowners": ["@steve-dietzel"],
   "iot_class": "local_polling",
   "requirements": [],
-  "dependencies": [],
+  "dependencies": ["frontend", "http"],
   "homeassistant": "2024.1.0"
 }
