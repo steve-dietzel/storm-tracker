@@ -400,7 +400,8 @@ class StormTrackerMiniCard extends HTMLElement {
     }
     this._config = {
       entity_prefix: config.entity_prefix,
-      colors: { ...DEFAULT_COLORS, ...(config.colors ?? {}) },
+      navigate:      config.navigate ?? null,
+      colors:        { ...DEFAULT_COLORS, ...(config.colors ?? {}) },
     };
     this._render();
   }
@@ -466,6 +467,7 @@ class StormTrackerMiniCard extends HTMLElement {
         .wrap {
           position: relative;
           padding: 1.4em;
+          cursor: ${this._config.navigate ? 'pointer' : 'default'};
         }
         svg { display: block; width: 100%; height: auto; }
         .lbl {
@@ -495,6 +497,13 @@ class StormTrackerMiniCard extends HTMLElement {
         </div>
       </ha-card>
     `;
+
+    if (this._config.navigate) {
+      this.shadowRoot.querySelector('.wrap').addEventListener('click', () => {
+        history.pushState(null, '', this._config.navigate);
+        window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
+      });
+    }
   }
 }
 
