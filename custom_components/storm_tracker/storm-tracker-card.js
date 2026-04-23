@@ -331,3 +331,13 @@ if (!customElements.get('storm-tracker-card')) {
     'color:#1565c0;background:#e3f2fd;padding:2px 4px;border-radius:0 3px 3px 0'
   );
 }
+
+// Register with the Lovelace card picker
+window.customCards = window.customCards || [];
+window.customCards.push({
+  type: 'storm-tracker-card',
+  name: 'Storm Tracker',
+  description: 'Sector-based lightning storm situational awareness',
+  preview: true,
+  documentationURL: 'https://github.com/steve-dietzel/storm-tracker',
+});
