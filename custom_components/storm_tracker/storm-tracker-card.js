@@ -451,31 +451,48 @@ class StormTrackerMiniCard extends HTMLElement {
       return `<line x1="${CX}" y1="${CY}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="rgba(255,255,255,0.18)" stroke-width="0.75"/>`;
     }).join('\n');
 
-    // Compass labels (N/NE/E … only)
-    const labels = sectors.map((sec, i) => {
-      const a  = compassToSVG(i * 45);
-      const lx = CX + LBL_R * Math.cos(a);
-      const ly = CY + LBL_R * Math.sin(a);
-      return `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="central" fill="var(--primary-text-color,#e0e0e0)" font-size="13" font-weight="700" font-family="sans-serif">${sec.label}</text>`;
-    }).join('\n');
-
     const outerRing = `<circle cx="${CX}" cy="${CY}" r="${MAX_R}" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>`;
     const centre    = `<circle cx="${CX}" cy="${CY}" r="5" fill="rgba(255,255,255,0.25)"/>`;
+
+    // Use a tight viewBox that clips to just the radar circle — no label margin needed
+    const margin = 4;
+    const vbMin  = CX - MAX_R - margin;
+    const vbSize = (MAX_R + margin) * 2;
 
     this.shadowRoot.innerHTML = `
       <style>
         :host { display: block; }
         ha-card { padding: 8px; box-sizing: border-box; }
+        .wrap {
+          position: relative;
+          padding: 1.4em;
+        }
         svg { display: block; width: 100%; height: auto; }
+        .lbl {
+          position: absolute;
+          font-size: 0.75rem;
+          font-weight: 700;
+          line-height: 1;
+          color: var(--primary-text-color, #e0e0e0);
+        }
+        .lbl-n { top: 0;   left: 50%; transform: translateX(-50%); }
+        .lbl-s { bottom: 0; left: 50%; transform: translateX(-50%); }
+        .lbl-e { top: 50%; right: 0;  transform: translateY(-50%); }
+        .lbl-w { top: 50%; left: 0;   transform: translateY(-50%); }
       </style>
       <ha-card>
-        <svg viewBox="0 0 ${VB} ${VB}" xmlns="http://www.w3.org/2000/svg">
-          ${wedges}
-          ${spokes}
-          ${outerRing}
-          ${labels}
-          ${centre}
-        </svg>
+        <div class="wrap">
+          <span class="lbl lbl-n">N</span>
+          <span class="lbl lbl-s">S</span>
+          <span class="lbl lbl-e">E</span>
+          <span class="lbl lbl-w">W</span>
+          <svg viewBox="${vbMin} ${vbMin} ${vbSize} ${vbSize}" xmlns="http://www.w3.org/2000/svg">
+            ${wedges}
+            ${spokes}
+            ${outerRing}
+            ${centre}
+          </svg>
+        </div>
       </ha-card>
     `;
   }
