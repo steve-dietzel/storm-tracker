@@ -338,6 +338,6 @@ window.customCards.push({
   type: 'storm-tracker-card',
   name: 'Storm Tracker',
   description: 'Sector-based lightning storm situational awareness',
-  preview: true,
+  preview: false,
   documentationURL: 'https://github.com/steve-dietzel/storm-tracker',
 });
