@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 
+from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -26,14 +27,13 @@ CARD_FILE = os.path.join(os.path.dirname(__file__), "storm-tracker-card.js")
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Storm Tracker from a config entry."""
 
-    # Register the Lovelace card as a static path so the browser can load it.
-    # This is done here (not in async_setup) because async_setup is only called
-    # when the integration is listed in configuration.yaml — which we don't require.
-    # async_register_static_paths is safe to call on every HA restart.
+    # Serve the JS file and tell the frontend to load it so the card type is
+    # registered via customElements.define() and appears in the card picker.
     await hass.http.async_register_static_paths(
         [StaticPathConfig(CARD_URL, CARD_FILE, cache_headers=False)]
     )
-    _LOGGER.info("Storm Tracker card available at %s", CARD_URL)
+    add_extra_js_url(hass, CARD_URL)
+    _LOGGER.info("Storm Tracker card registered at %s", CARD_URL)
 
     update_interval = int(
         entry.options.get(
