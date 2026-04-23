@@ -14,7 +14,7 @@
  *     clear:       "#1e2a1e"
  */
 
-const SECTOR_KEYS  = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+const SECTOR_KEYS   = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 const SECTOR_LABELS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
 const DEFAULT_COLORS = {
@@ -27,14 +27,14 @@ const DEFAULT_COLORS = {
 const DEFAULT_RINGS = [50, 100, 150, 200];
 
 // SVG geometry constants
-const VB     = 400;   // viewBox width and height
-const CX     = 200;   // centre x
-const CY     = 200;   // centre y
-const MAX_R  = 152;   // radar circle radius (leaves room for outer labels)
+const VB     = 400;          // viewBox width and height
+const CX     = 200;          // centre x
+const CY     = 200;          // centre y
+const MAX_R  = 152;          // radar circle radius (leaves room for outer labels)
 const LBL_R  = MAX_R + 24;  // compass label radius
 const DATA_R = MAX_R * 0.58; // data label radius (inside wedge)
 
-/** Convert compass bearing (0=N, clockwise) to SVG radians (0=right, clockwise). */
+/** Convert compass bearing (0=N, clockwise) to SVG angle (0=right, clockwise). */
 function compassToSVG(deg) {
   return (deg - 90) * Math.PI / 180;
 }
@@ -63,7 +63,6 @@ function fmtDist(val, unit) {
  * Returns '#111111' for light backgrounds, 'rgba(255,255,255,0.95)' for dark.
  */
 function textColorFor(hex) {
-  // Strip leading # and handle shorthand (#rgb → #rrggbb)
   let h = hex.replace(/^#/, '');
   if (h.length === 3) {
     h = h.split('').map(c => c + c).join('');
@@ -152,6 +151,18 @@ class StormTrackerCard extends HTMLElement {
   }
 
   // -------------------------------------------------------------------------
+  // Fire more-info event for a given entity
+  // -------------------------------------------------------------------------
+
+  _fireMoreInfo(entityId) {
+    this.dispatchEvent(new CustomEvent('hass-more-info', {
+      bubbles:  true,
+      composed: true,
+      detail:   { entityId },
+    }));
+  }
+
+  // -------------------------------------------------------------------------
   // Build per-sector data array
   // -------------------------------------------------------------------------
 
@@ -159,7 +170,7 @@ class StormTrackerCard extends HTMLElement {
     const p = this._config.entity_prefix;
     return SECTOR_KEYS.map((key, i) => {
       const countId   = `sensor.${p}_${key}_strike_count`;
-      const closestId = `sensor.${p}_${key}_closest_distance`;
+      const closestId = `sensor.${p}_${key}_closest_strike`;
       const trendId   = `sensor.${p}_${key}_trend`;
 
       const count   = this._numState(countId, 0);
@@ -178,6 +189,7 @@ class StormTrackerCard extends HTMLElement {
         closest: isNaN(closestVal) ? null : closestVal,
         trend:   trend,
         unit:    unit,
+        trendId: trendId,
       };
     });
   }
@@ -188,17 +200,18 @@ class StormTrackerCard extends HTMLElement {
 
   _svgWedges(sectors) {
     return sectors.map((sec, i) => {
-      const color  = escHtml(this._config.colors[sec.trend] ?? this._config.colors.clear);
-      const a1     = compassToSVG(i * 45 - 22.5);
-      const a2     = compassToSVG(i * 45 + 22.5);
-      const x1     = CX + MAX_R * Math.cos(a1);
-      const y1     = CY + MAX_R * Math.sin(a1);
-      const x2     = CX + MAX_R * Math.cos(a2);
-      const y2     = CY + MAX_R * Math.sin(a2);
+      const color = escHtml(this._config.colors[sec.trend] ?? this._config.colors.clear);
+      const a1    = compassToSVG(i * 45 - 22.5);
+      const a2    = compassToSVG(i * 45 + 22.5);
+      const x1    = CX + MAX_R * Math.cos(a1);
+      const y1    = CY + MAX_R * Math.sin(a1);
+      const x2    = CX + MAX_R * Math.cos(a2);
+      const y2    = CY + MAX_R * Math.sin(a2);
       // large-arc-flag=0 (45° < 180°), sweep-flag=1 (clockwise)
       return `<path d="M${CX},${CY} L${x1.toFixed(2)},${y1.toFixed(2)} ` +
              `A${MAX_R},${MAX_R} 0 0,1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" ` +
-             `fill="${color}" stroke="#111" stroke-width="1.5" stroke-linejoin="round"/>`;
+             `fill="${color}" stroke="#111" stroke-width="1.5" stroke-linejoin="round" ` +
+             `style="cursor:pointer" data-entity="${escHtml(sec.trendId)}"/>`;
     }).join('\n');
   }
 
@@ -207,7 +220,6 @@ class StormTrackerCard extends HTMLElement {
     const maxRing = sorted[sorted.length - 1];
     return sorted.map((ring) => {
       const r  = (ring / maxRing) * MAX_R;
-      // Ring label: just inside the top of the ring, nudged right of the N spoke
       const lx = CX + 6;
       const ly = CY - r + 11;
       return `<circle cx="${CX}" cy="${CY}" r="${r.toFixed(2)}" ` +
@@ -243,23 +255,21 @@ class StormTrackerCard extends HTMLElement {
       // Data labels inside wedge (only when strikes present)
       let dataLabel = '';
       if (sec.count > 0) {
-        const dx = CX + DATA_R * Math.cos(ca);
-        const dy = CY + DATA_R * Math.sin(ca);
-
-        // Resolve wedge color to determine readable text color
-        const bgColor   = this._config.colors[sec.trend] ?? this._config.colors.clear;
-        const textPri   = escHtml(textColorFor(bgColor));
-        const textSec   = escHtml(textColorForSecondary(bgColor));
+        const dx      = CX + DATA_R * Math.cos(ca);
+        const dy      = CY + DATA_R * Math.sin(ca);
+        const bgColor = this._config.colors[sec.trend] ?? this._config.colors.clear;
+        const textPri = escHtml(textColorFor(bgColor));
+        const textSec = escHtml(textColorForSecondary(bgColor));
 
         dataLabel =
           `<text x="${dx.toFixed(1)}" y="${(dy - 7).toFixed(1)}" ` +
           `text-anchor="middle" dominant-baseline="central" ` +
-          `fill="${textPri}" ` +
-          `font-size="11" font-weight="600" font-family="sans-serif">${sec.count}</text>\n` +
+          `fill="${textPri}" font-size="11" font-weight="600" font-family="sans-serif" ` +
+          `style="cursor:pointer" data-entity="${escHtml(sec.trendId)}">${sec.count}</text>\n` +
           `<text x="${dx.toFixed(1)}" y="${(dy + 8).toFixed(1)}" ` +
           `text-anchor="middle" dominant-baseline="central" ` +
-          `fill="${textSec}" ` +
-          `font-size="9" font-family="sans-serif">${fmtDist(sec.closest, sec.unit)}</text>`;
+          `fill="${textSec}" font-size="9" font-family="sans-serif" ` +
+          `style="cursor:pointer" data-entity="${escHtml(sec.trendId)}">${fmtDist(sec.closest, sec.unit)}</text>`;
       }
 
       return compassLabel + '\n' + dataLabel;
@@ -275,7 +285,7 @@ class StormTrackerCard extends HTMLElement {
     ];
     const itemW = VB / entries.length;
     return entries.map((e, i) => {
-      const x = i * itemW + itemW / 2;
+      const x     = i * itemW + itemW / 2;
       const color = escHtml(this._config.colors[e.key] ?? DEFAULT_COLORS[e.key]);
       return `<rect x="${x - 16}" y="4" width="12" height="12" rx="2" fill="${color}" stroke="#555" stroke-width="0.5"/>
               <text x="${x}" y="11" dominant-baseline="central" fill="var(--secondary-text-color,#aaa)" font-size="10" font-family="sans-serif">${e.label}</text>`;
@@ -289,7 +299,6 @@ class StormTrackerCard extends HTMLElement {
   _render() {
     if (!this._config) return;
 
-    // Loading state before first hass update
     if (!this._hass) {
       this.shadowRoot.innerHTML =
         `<ha-card><div style="padding:16px;color:var(--primary-text-color)">Loading…</div></ha-card>`;
@@ -305,7 +314,6 @@ class StormTrackerCard extends HTMLElement {
     const labels    = this._svgLabels(sectors);
     const legend    = this._svgLegend();
 
-    // Legend SVG sits below the radar
     const legendH = 22;
     const totalH  = VB + legendH + 8;
 
@@ -339,7 +347,6 @@ class StormTrackerCard extends HTMLElement {
         <div class="card-header">${escHtml(this._config.title)}</div>
         <div class="radar-wrap">
           <svg viewBox="0 0 ${VB} ${totalH}" xmlns="http://www.w3.org/2000/svg">
-            <!-- Radar -->
             <g>
               ${wedges}
               ${rings}
@@ -348,7 +355,6 @@ class StormTrackerCard extends HTMLElement {
               ${labels}
               ${centre}
             </g>
-            <!-- Legend -->
             <g transform="translate(0, ${VB + 6})">
               ${legend}
             </g>
@@ -356,6 +362,13 @@ class StormTrackerCard extends HTMLElement {
         </div>
       </ha-card>
     `;
+
+    // Wire up more-info click handlers on all elements with data-entity attribute
+    this.shadowRoot.querySelectorAll('[data-entity]').forEach(el => {
+      el.addEventListener('click', () => {
+        this._fireMoreInfo(el.dataset.entity);
+      });
+    });
   }
 }
 
