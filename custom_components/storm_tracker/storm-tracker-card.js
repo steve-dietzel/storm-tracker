@@ -377,3 +377,123 @@ window.customCards.push({
   preview: false,
   documentationURL: 'https://github.com/steve-dietzel/storm-tracker',
 });
+
+// ---------------------------------------------------------------------------
+// Mini card — compact colour-only radar, scales to fit any column width
+// ---------------------------------------------------------------------------
+
+class StormTrackerMiniCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+    this._config = null;
+    this._hass   = null;
+  }
+
+  static getStubConfig() {
+    return { entity_prefix: 'storm_tracker' };
+  }
+
+  setConfig(config) {
+    if (!config.entity_prefix) {
+      throw new Error('storm-tracker-mini-card: entity_prefix is required');
+    }
+    this._config = {
+      entity_prefix: config.entity_prefix,
+      colors: { ...DEFAULT_COLORS, ...(config.colors ?? {}) },
+    };
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  getCardSize() { return 2; }
+
+  // Reuse sector data logic from the main card
+  _sectorData() {
+    const p = this._config.entity_prefix;
+    return SECTOR_KEYS.map((key, i) => {
+      const trendId = `sensor.${p}_${key}_trend`;
+      const trend   = this._hass?.states[trendId]?.state ?? 'clear';
+      return { label: SECTOR_LABELS[i], trend };
+    });
+  }
+
+  _render() {
+    if (!this._config || !this._hass) {
+      this.shadowRoot.innerHTML =
+        `<ha-card style="padding:8px"><div style="aspect-ratio:1;background:var(--card-background-color)"></div></ha-card>`;
+      return;
+    }
+
+    const sectors = this._sectorData();
+
+    // Wedges
+    const wedges = sectors.map((sec, i) => {
+      const color = escHtml(this._config.colors[sec.trend] ?? DEFAULT_COLORS.clear);
+      const a1 = compassToSVG(i * 45 - 22.5);
+      const a2 = compassToSVG(i * 45 + 22.5);
+      const x1 = CX + MAX_R * Math.cos(a1);
+      const y1 = CY + MAX_R * Math.sin(a1);
+      const x2 = CX + MAX_R * Math.cos(a2);
+      const y2 = CY + MAX_R * Math.sin(a2);
+      return `<path d="M${CX},${CY} L${x1.toFixed(2)},${y1.toFixed(2)} A${MAX_R},${MAX_R} 0 0,1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${color}" stroke="#111" stroke-width="1.5" stroke-linejoin="round"/>`;
+    }).join('\n');
+
+    // Spokes
+    const spokes = Array.from({ length: 8 }, (_, i) => {
+      const a  = compassToSVG(i * 45 - 22.5);
+      const x2 = CX + MAX_R * Math.cos(a);
+      const y2 = CY + MAX_R * Math.sin(a);
+      return `<line x1="${CX}" y1="${CY}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="rgba(255,255,255,0.18)" stroke-width="0.75"/>`;
+    }).join('\n');
+
+    // Compass labels (N/NE/E … only)
+    const labels = sectors.map((sec, i) => {
+      const a  = compassToSVG(i * 45);
+      const lx = CX + LBL_R * Math.cos(a);
+      const ly = CY + LBL_R * Math.sin(a);
+      return `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="central" fill="var(--primary-text-color,#e0e0e0)" font-size="13" font-weight="700" font-family="sans-serif">${sec.label}</text>`;
+    }).join('\n');
+
+    const outerRing = `<circle cx="${CX}" cy="${CY}" r="${MAX_R}" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>`;
+    const centre    = `<circle cx="${CX}" cy="${CY}" r="5" fill="rgba(255,255,255,0.25)"/>`;
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host { display: block; }
+        ha-card { padding: 8px; box-sizing: border-box; }
+        svg { display: block; width: 100%; height: auto; }
+      </style>
+      <ha-card>
+        <svg viewBox="0 0 ${VB} ${VB}" xmlns="http://www.w3.org/2000/svg">
+          ${wedges}
+          ${spokes}
+          ${outerRing}
+          ${labels}
+          ${centre}
+        </svg>
+      </ha-card>
+    `;
+  }
+}
+
+if (!customElements.get('storm-tracker-mini-card')) {
+  customElements.define('storm-tracker-mini-card', StormTrackerMiniCard);
+  console.info(
+    '%c STORM-TRACKER-MINI-CARD %c loaded ',
+    'color:#fff;background:#1565c0;padding:2px 4px;border-radius:3px 0 0 3px;font-weight:bold',
+    'color:#1565c0;background:#e3f2fd;padding:2px 4px;border-radius:0 3px 3px 0'
+  );
+}
+
+window.customCards.push({
+  type: 'storm-tracker-mini-card',
+  name: 'Storm Tracker Mini',
+  description: 'Compact colour-only storm sector radar',
+  preview: false,
+  documentationURL: 'https://github.com/steve-dietzel/storm-tracker',
+});
