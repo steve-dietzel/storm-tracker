@@ -9,7 +9,7 @@
  *   rings: [50, 100, 150, 200]    # distance rings in configured units
  *   colors:
  *     approaching: "#cc2200"
- *     receding:    "#0066aa"
+ *     receding:    "#006600"
  *     stationary:  "#cc6600"
  *     clear:       "#1e2a1e"
  */
@@ -19,7 +19,7 @@ const SECTOR_LABELS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
 const DEFAULT_COLORS = {
   approaching: '#cc2200',   // dark red     — white text readable
-  receding:    '#0066aa',   // steel blue   — white text readable, clearly "safe"
+  receding:    '#006600',   // dark green   — white text readable, clearly "safe"
   stationary:  '#cc6600',   // dark amber   — white text readable
   clear:       '#1e2a1e',   // dark green   — white text readable
 };
@@ -159,7 +159,7 @@ class StormTrackerCard extends HTMLElement {
     const p = this._config.entity_prefix;
     return SECTOR_KEYS.map((key, i) => {
       const countId   = `sensor.${p}_${key}_strike_count`;
-      const closestId = `sensor.${p}_${key}_closest_distance`;
+      const closestId = `sensor.${p}_${key}_closest_strike`;
       const trendId   = `sensor.${p}_${key}_trend`;
 
       const count   = this._numState(countId, 0);
@@ -271,7 +271,6 @@ class StormTrackerCard extends HTMLElement {
       { key: 'approaching', label: 'Approaching' },
       { key: 'stationary',  label: 'Stationary'  },
       { key: 'receding',    label: 'Receding'     },
-      { key: 'clear',       label: 'Clear'        },
     ];
     const itemW = VB / entries.length;
     return entries.map((e, i) => {
