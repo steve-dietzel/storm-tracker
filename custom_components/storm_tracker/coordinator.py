@@ -15,6 +15,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     BURST_WINDOW_SECONDS,
+    CENTROID_WINDOW_MINUTES,
     CONF_APPROACH_THRESHOLD,
     CONF_GEO_LOCATION_PREFIX,
     CONF_TIME_WINDOW_MINUTES,
@@ -351,9 +352,9 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
             t0 = 0.0
 
         # Collect raw (timestamp_sec, distance) per sector before bucketing.
-        # Also collect (distance, lat, lon) per sector for centroid/edge map positions.
+        # Also collect (timestamp_sec, distance, lat, lon) per sector for map positions.
         sector_raw: dict[int, list[tuple[float, float]]] = {i: [] for i in range(8)}
-        sector_coords: dict[int, list[tuple[float, float, float]]] = {i: [] for i in range(8)}
+        sector_coords: dict[int, list[tuple[float, float, float, float]]] = {i: [] for i in range(8)}
 
         for entity_id, attrs, pub_time in snapshot:
             try:
@@ -381,7 +382,7 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
             az = _azimuth(home_lat, home_lon, strike_lat, strike_lon)
             sector = _sector_index(az)
             sector_raw[sector].append((pub_time.timestamp(), distance))
-            sector_coords[sector].append((distance, strike_lat, strike_lon))
+            sector_coords[sector].append((pub_time.timestamp(), distance, strike_lat, strike_lon))
 
         # Build SectorData per sector
         data = StormTrackerData()
@@ -410,11 +411,13 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
             else:
                 trend = TREND_STATIONARY
 
-            # Map positions: centroid = mean lat/lon; edge = lat/lon of closest strike.
-            coords = sector_coords[idx]
-            centroid_lat = sum(c[1] for c in coords) / len(coords)
-            centroid_lon = sum(c[2] for c in coords) / len(coords)
-            edge_coord   = min(coords, key=lambda c: c[0])
+            # Map positions use only the most recent CENTROID_WINDOW_MINUTES so the
+            # pin reflects where the storm is now, not a smeared historical average.
+            centroid_cutoff = t0 + (max(p[0] for p in sector_raw[idx]) - t0) - CENTROID_WINDOW_MINUTES * 60
+            coords = [c for c in sector_coords[idx] if c[0] >= centroid_cutoff] or sector_coords[idx]
+            centroid_lat = sum(c[2] for c in coords) / len(coords)
+            centroid_lon = sum(c[3] for c in coords) / len(coords)
+            edge_coord   = min(coords, key=lambda c: c[1])
 
             data.sectors[idx] = SectorData(
                 strike_count=count,
@@ -423,8 +426,8 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
                 trend=trend,
                 centroid_lat=centroid_lat,
                 centroid_lon=centroid_lon,
-                edge_lat=edge_coord[1],
-                edge_lon=edge_coord[2],
+                edge_lat=edge_coord[2],
+                edge_lon=edge_coord[3],
             )
             global_distances.extend(distances)
 

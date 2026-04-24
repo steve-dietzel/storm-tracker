@@ -79,6 +79,11 @@ BURST_WINDOW_SECONDS = 60
 # Fewer than two buckets means we cannot measure change over time.
 MIN_TREND_BUCKETS = 2
 
+# Time window used to compute centroid and leading-edge map positions.
+# Shorter than the trend window so pins reflect where the storm is now,
+# not a smeared average over the full history.
+CENTROID_WINDOW_MINUTES = 10
+
 # ---------------------------------------------------------------------------
 # Earth radius constants (for Haversine fallback)
 # ---------------------------------------------------------------------------
