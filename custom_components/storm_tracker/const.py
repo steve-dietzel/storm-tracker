@@ -84,6 +84,10 @@ MIN_TREND_BUCKETS = 2
 # not a smeared average over the full history.
 CENTROID_WINDOW_MINUTES = 10
 
+# Reverse geocoding — only re-query Nominatim when the centroid moves further
+# than this distance from the last geocoded position.
+GEOCODE_CACHE_RADIUS_KM = 30
+
 # ---------------------------------------------------------------------------
 # Earth radius constants (for Haversine fallback)
 # ---------------------------------------------------------------------------

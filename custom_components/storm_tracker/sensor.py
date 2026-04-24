@@ -267,6 +267,24 @@ class SectorTrendSensor(StormTrackerSensorBase):
     def native_value(self) -> str:
         return self.data.sectors[self._sector_idx].trend
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        sector = self.data.sectors[self._sector_idx]
+        unit = (
+            UNIT_MILES
+            if self._entry.options.get(CONF_UNIT_SYSTEM, self._entry.data.get(CONF_UNIT_SYSTEM, DEFAULT_UNIT_SYSTEM)) == UNIT_IMPERIAL
+            else UNIT_KILOMETERS
+        )
+        attrs: dict[str, Any] = {
+            "direction": SECTOR_LABELS[self._sector_idx],
+            "closest_distance": sector.closest_distance,
+            "distance_unit": unit,
+            "strike_count": sector.strike_count,
+        }
+        if sector.nearest_city is not None:
+            attrs["nearest_city"] = sector.nearest_city
+        return attrs
+
 
 # ---------------------------------------------------------------------------
 # Summary sensors

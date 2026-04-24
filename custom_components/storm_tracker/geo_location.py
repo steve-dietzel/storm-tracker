@@ -91,6 +91,7 @@ class StormTrackerGeoManager:
             else:
                 self._remove(idx, _TYPE_CENTROID)
 
+
             if active and sector.edge_lat is not None:
                 self._upsert(idx, _TYPE_EDGE, sector, label)
             else:
@@ -107,12 +108,13 @@ class StormTrackerGeoManager:
         lat  = sector.centroid_lat if entity_type == _TYPE_CENTROID else sector.edge_lat
         lon  = sector.centroid_lon if entity_type == _TYPE_CENTROID else sector.edge_lon
         dist = sector.avg_distance if entity_type == _TYPE_CENTROID else sector.closest_distance
+        city = sector.nearest_city if entity_type == _TYPE_CENTROID else None
 
         if key in self._entities:
-            self._entities[key].update_position(lat, lon, dist, sector.trend)
+            self._entities[key].update_position(lat, lon, dist, sector.trend, city)
         else:
             entity = StormTrackerGeoEntity(
-                self._entry.entry_id, idx, entity_type, lat, lon, dist, sector.trend, label
+                self._entry.entry_id, idx, entity_type, lat, lon, dist, sector.trend, label, city
             )
             self._entities[key] = entity
             self._async_add_entities([entity])
@@ -144,6 +146,7 @@ class StormTrackerGeoEntity(GeolocationEvent):
         distance: float | None,
         trend: str,
         sector_label: str,
+        nearest_city: str | None = None,
     ) -> None:
         self._entry_id    = entry_id
         self._sector_idx  = sector_idx
@@ -154,7 +157,10 @@ class StormTrackerGeoEntity(GeolocationEvent):
         self._attr_unique_id = f"{entry_id}_geo_{sector_idx}_{entity_type}"
         self._attr_name      = f"Storm {sector_label} {entity_type.title()}"
         self._attr_icon      = "mdi:weather-lightning" if entity_type == _TYPE_CENTROID else "mdi:flash-alert"
-        self._attr_extra_state_attributes = {"trend": trend, "sector": sector_label}
+        attrs = {"trend": trend, "sector": sector_label}
+        if nearest_city is not None and entity_type == _TYPE_CENTROID:
+            attrs["nearest_city"] = nearest_city
+        self._attr_extra_state_attributes = attrs
         self._remove_signal: callable | None = None
 
     async def async_added_to_hass(self) -> None:
@@ -177,12 +183,16 @@ class StormTrackerGeoEntity(GeolocationEvent):
         lon: float,
         distance: float | None,
         trend: str,
+        nearest_city: str | None = None,
     ) -> None:
         self._attr_latitude  = lat
         self._attr_longitude = lon
         self._attr_distance  = distance
-        self._attr_extra_state_attributes = {
-            "trend": trend,
+        attrs = {
+            "trend":  trend,
             "sector": self._attr_extra_state_attributes["sector"],
         }
+        if nearest_city is not None and self._entity_type == _TYPE_CENTROID:
+            attrs["nearest_city"] = nearest_city
+        self._attr_extra_state_attributes = attrs
         self.async_write_ha_state()

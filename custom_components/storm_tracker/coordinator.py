@@ -1,6 +1,7 @@
 """Data coordinator for Storm Tracker."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -10,6 +11,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -17,6 +19,7 @@ from .const import (
     BURST_WINDOW_SECONDS,
     CENTROID_WINDOW_MINUTES,
     CONF_APPROACH_THRESHOLD,
+    GEOCODE_CACHE_RADIUS_KM,
     CONF_GEO_LOCATION_PREFIX,
     CONF_TIME_WINDOW_MINUTES,
     CONF_UNIT_SYSTEM,
@@ -58,6 +61,7 @@ class SectorData:
     centroid_lon: float | None = None
     edge_lat: float | None = None
     edge_lon: float | None = None
+    nearest_city: str | None = None
 
 
 @dataclass
@@ -212,6 +216,8 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
             update_interval=timedelta(seconds=update_interval_seconds),
         )
         self._entry = entry
+        # sector_idx → (lat, lon, city_name) — invalidated when centroid moves > GEOCODE_CACHE_RADIUS_KM
+        self._geo_cache: dict[int, tuple[float, float, str]] = {}
 
     # ------------------------------------------------------------------
     # Properties resolved from entry data + options (options take priority)
@@ -245,9 +251,78 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
         try:
             snapshot  = self._build_snapshot()
             prev_data = self.data  # None on first run
-            return await self.hass.async_add_executor_job(self._compute, snapshot, prev_data)
+            data = await self.hass.async_add_executor_job(self._compute, snapshot, prev_data)
+            await self._async_geocode_centroids(data)
+            return data
         except Exception as exc:
             raise UpdateFailed(f"Storm Tracker update failed: {exc}") from exc
+
+    async def _async_geocode_centroids(self, data: StormTrackerData) -> None:
+        """Reverse-geocode sector centroids that have moved, using Nominatim."""
+        to_geocode: list[int] = []
+        for idx, sector in data.sectors.items():
+            if sector.centroid_lat is None:
+                self._geo_cache.pop(idx, None)
+                continue
+            cached = self._geo_cache.get(idx)
+            if cached:
+                c_lat, c_lon, city = cached
+                dist_km = _haversine(c_lat, c_lon, sector.centroid_lat, sector.centroid_lon, False)
+                if dist_km < GEOCODE_CACHE_RADIUS_KM:
+                    sector.nearest_city = city
+                    continue
+            to_geocode.append(idx)
+
+        if not to_geocode:
+            return
+
+        session = async_get_clientsession(self.hass)
+        for i, idx in enumerate(to_geocode):
+            if i > 0:
+                await asyncio.sleep(1.1)  # Nominatim rate limit: 1 req/sec
+            sector = data.sectors[idx]
+            city = await self._async_reverse_geocode(session, sector.centroid_lat, sector.centroid_lon)
+            sector.nearest_city = city
+            self._geo_cache[idx] = (sector.centroid_lat, sector.centroid_lon, city)
+
+    async def _async_reverse_geocode(self, session, lat: float, lon: float) -> str:
+        """Query Nominatim for the nearest place name to the given coordinates."""
+        try:
+            params = {
+                "lat": f"{lat:.5f}",
+                "lon": f"{lon:.5f}",
+                "format": "json",
+                "zoom": "10",
+                "addressdetails": "1",
+            }
+            headers = {
+                "User-Agent": (
+                    "homeassistant-storm-tracker/1.0 "
+                    "(https://github.com/steve-dietzel/storm-tracker)"
+                )
+            }
+            async with session.get(
+                "https://nominatim.openstreetmap.org/reverse",
+                params=params,
+                headers=headers,
+                timeout=10,
+            ) as resp:
+                if resp.status == 200:
+                    payload = await resp.json()
+                    addr = payload.get("address", {})
+                    city = (
+                        addr.get("city")
+                        or addr.get("town")
+                        or addr.get("village")
+                        or addr.get("hamlet")
+                        or addr.get("county")
+                        or "Unknown"
+                    )
+                    state = addr.get("state", "")
+                    return f"{city}, {state}".strip(", ") if state else city
+        except Exception as exc:
+            _LOGGER.debug("Reverse geocode failed for %.4f,%.4f: %s", lat, lon, exc)
+        return "Unknown location"
 
     def _build_snapshot(self) -> list[_Strike]:
         """Collect matching geo_location states on the event loop thread.
