@@ -65,10 +65,17 @@ DEFAULT_UPDATE_INTERVAL    = 30
 DEFAULT_APPROACH_THRESHOLD = 10.0
 
 # ---------------------------------------------------------------------------
-# Minimum data points required for a meaningful trend calculation
+# Trend calculation parameters
 # ---------------------------------------------------------------------------
 
-MIN_TREND_POINTS = 3
+# Strikes whose publication_dates fall within this window are collapsed into
+# a single centroid/leading-edge sample before regression.  This prevents a
+# burst of simultaneous bolts from producing a meaningless slope.
+BURST_WINDOW_SECONDS = 60
+
+# Minimum number of distinct time buckets required to compute a trend slope.
+# Fewer than two buckets means we cannot measure change over time.
+MIN_TREND_BUCKETS = 2
 
 # ---------------------------------------------------------------------------
 # Earth radius constants (for Haversine fallback)

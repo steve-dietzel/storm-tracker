@@ -14,6 +14,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BURST_WINDOW_SECONDS,
     CONF_APPROACH_THRESHOLD,
     CONF_GEO_LOCATION_PREFIX,
     CONF_TIME_WINDOW_MINUTES,
@@ -25,7 +26,7 @@ from .const import (
     DOMAIN,
     EARTH_RADIUS_KM,
     EARTH_RADIUS_MI,
-    MIN_TREND_POINTS,
+    MIN_TREND_BUCKETS,
     SECTOR_LABELS,
     TREND_APPROACHING,
     TREND_CLEAR,
@@ -102,15 +103,13 @@ def _haversine(
 
 
 def _linear_slope(points: list[tuple[float, float]]) -> float | None:
-    """Return slope of linear regression on (x, y) pairs, or None if degenerate.
+    """Return OLS slope for (x, y) pairs, or None if fewer than 2 points.
 
-    Points are (hours_offset, distance) where hours_offset is always >= 0,
-    anchored to the oldest strike in the snapshot.  A negative slope means
-    distance is decreasing over time → storm approaching.  A positive slope
-    means distance is increasing → storm receding.
+    Negative slope → distance decreasing over time → storm approaching.
+    Positive slope → distance increasing over time → storm receding.
     """
     n = len(points)
-    if n < MIN_TREND_POINTS:
+    if n < 2:
         return None
     xs = [p[0] for p in points]
     ys = [p[1] for p in points]
@@ -123,25 +122,70 @@ def _linear_slope(points: list[tuple[float, float]]) -> float | None:
     return numer / denom
 
 
-def _trend_state(
-    points: list[tuple[float, float]], threshold: float
-) -> str:
-    """Compute trend state from (hours_offset, distance) pairs.
+def _group_by_time_bucket(
+    raw: list[tuple[float, float]],
+) -> list[tuple[float, float, float]]:
+    """Collapse (timestamp_sec, distance) pairs into time buckets.
 
-    Slope sign convention:
-      negative slope → distance decreasing → APPROACHING
-      positive slope → distance increasing → RECEDING
-      |slope| < threshold → STATIONARY
+    Strikes whose timestamps fall within BURST_WINDOW_SECONDS of the first
+    strike in a group are merged into one sample.  Returns a list of
+    (mean_timestamp_sec, centroid_distance, leading_edge_distance) — one
+    entry per bucket.  Collapsing burst strikes eliminates spurious slopes
+    caused by near-simultaneous bolts having slightly different distances.
     """
-    count = len(points)
-    if count == 0:
-        return TREND_CLEAR
-    slope = _linear_slope(points)
-    if slope is None:
+    if not raw:
+        return []
+    sorted_raw = sorted(raw, key=lambda p: p[0])
+    buckets: list[list[tuple[float, float]]] = []
+    current: list[tuple[float, float]] = [sorted_raw[0]]
+    for pt in sorted_raw[1:]:
+        if pt[0] - current[0][0] <= BURST_WINDOW_SECONDS:
+            current.append(pt)
+        else:
+            buckets.append(current)
+            current = [pt]
+    buckets.append(current)
+
+    result = []
+    for bucket in buckets:
+        times = [p[0] for p in bucket]
+        dists = [p[1] for p in bucket]
+        result.append((sum(times) / len(times), sum(dists) / len(dists), min(dists)))
+    return result
+
+
+def _combined_trend(
+    centroid_slope: float | None,
+    edge_slope: float | None,
+    threshold: float,
+) -> str:
+    """Classify trend from centroid and leading-edge regression slopes.
+
+    Conservative toward APPROACHING: a single approaching signal is enough to
+    warn.  Conservative toward RECEDING: both signals must agree before the
+    storm is dismissed as moving away.
+    """
+    def _classify(slope: float | None) -> str | None:
+        if slope is None:
+            return None
+        if slope < -threshold:
+            return TREND_APPROACHING
+        if slope > threshold:
+            return TREND_RECEDING
         return TREND_STATIONARY
-    if slope < -threshold:
+
+    c = _classify(centroid_slope)
+    e = _classify(edge_slope)
+
+    if c is None and e is None:
+        return TREND_STATIONARY
+    if c is None:
+        return e
+    if e is None:
+        return c
+    if TREND_APPROACHING in (c, e):
         return TREND_APPROACHING
-    if slope > threshold:
+    if c == TREND_RECEDING and e == TREND_RECEDING:
         return TREND_RECEDING
     return TREND_STATIONARY
 
@@ -257,7 +301,19 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
                 skipped_window += 1
                 continue
 
-            strikes.append((state.entity_id, dict(state.attributes), last_changed))
+            # Use publication_date (actual strike time) as the timestamp so
+            # the time axis reflects when the bolt occurred, not when HA received
+            # the entity.  Blitzortung batches delivery, so last_changed is often
+            # identical for many strikes and collapses the regression time axis.
+            pub_time = last_changed
+            pub_str = state.attributes.get("publication_date")
+            if pub_str:
+                try:
+                    pub_time = datetime.fromisoformat(pub_str)
+                except (ValueError, TypeError):
+                    pass
+
+            strikes.append((state.entity_id, dict(state.attributes), pub_time))
 
         _LOGGER.info(
             "Snapshot: %d strikes accepted, %d skipped (prefix), %d skipped (time window)",
@@ -270,30 +326,30 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
 
         Runs in an executor thread — must not access the HA state machine.
 
-        Timestamp anchoring: t0 is set to the OLDEST strike in the snapshot so
-        that hours_offset is always >= 0 and increases toward the present.  This
-        ensures the linear regression slope has the correct sign:
-          negative slope → distance decreasing over time → APPROACHING
-          positive slope → distance increasing over time → RECEDING
+        Trend algorithm:
+          1. Use publication_date (actual strike time) as the time axis so that
+             Blitzortung batch-delivery doesn't collapse all points to t=0.
+          2. Group strikes per sector into BURST_WINDOW_SECONDS time buckets.
+             Each bucket produces one centroid sample (mean distance) and one
+             leading-edge sample (min distance).
+          3. Run OLS regression independently on each series.
+          4. Classify via _combined_trend — conservative toward APPROACHING.
         """
         home_lat: float = self.hass.config.latitude
         home_lon: float = self.hass.config.longitude
         imperial: bool = self.unit_system == UNIT_IMPERIAL
         threshold = self.approach_threshold
 
-        # Anchor t0 to the oldest strike so hours_offset is always >= 0.
-        # Using the first-seen entity (original code) produced negative offsets
-        # whenever iteration order didn't match chronological order, which
-        # corrupted the regression slope sign and flipped approaching/receding.
+        # Anchor t0 to the oldest publication time so hours_offset is always >= 0.
         if snapshot:
-            t0 = min(last_changed.timestamp() for _, _, last_changed in snapshot)
+            t0 = min(ts.timestamp() for _, _, ts in snapshot)
         else:
             t0 = 0.0
 
-        sector_points: dict[int, list[tuple[float, float]]] = {i: [] for i in range(8)}
+        # Collect raw (timestamp_sec, distance) per sector before bucketing.
+        sector_raw: dict[int, list[tuple[float, float]]] = {i: [] for i in range(8)}
 
-        for entity_id, attrs, last_changed in snapshot:
-            # Coordinates
+        for entity_id, attrs, pub_time in snapshot:
             try:
                 strike_lat = float(attrs["latitude"])
                 strike_lon = float(attrs["longitude"])
@@ -314,32 +370,39 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
                     distance = None
 
             if distance is None:
-                # Haversine fallback — returns miles or km depending on imperial flag
                 distance = _haversine(home_lat, home_lon, strike_lat, strike_lon, imperial)
 
-            # Azimuth + sector assignment
             az = _azimuth(home_lat, home_lon, strike_lat, strike_lon)
             sector = _sector_index(az)
-
-            # Timestamp offset in hours from oldest strike — always >= 0
-            hours_offset = (last_changed.timestamp() - t0) / 3600.0
-
-            sector_points[sector].append((hours_offset, distance))
+            sector_raw[sector].append((pub_time.timestamp(), distance))
 
         # Build SectorData per sector
         data = StormTrackerData()
         global_distances: list[float] = []
 
-        for idx, points in sector_points.items():
-            if not points:
+        for idx, raw_points in sector_raw.items():
+            if not raw_points:
                 data.sectors[idx] = SectorData()
                 continue
 
-            distances = [p[1] for p in points]
+            distances = [p[1] for p in raw_points]
             count = len(distances)
             avg_dist = sum(distances) / count
             closest = min(distances)
-            trend = _trend_state(points, threshold)
+
+            buckets = _group_by_time_bucket(raw_points)
+
+            if len(buckets) >= MIN_TREND_BUCKETS:
+                centroid_pts = [((b[0] - t0) / 3600.0, b[1]) for b in buckets]
+                edge_pts     = [((b[0] - t0) / 3600.0, b[2]) for b in buckets]
+                trend = _combined_trend(
+                    _linear_slope(centroid_pts),
+                    _linear_slope(edge_pts),
+                    threshold,
+                )
+            else:
+                # Not enough distinct time groups to measure movement.
+                trend = TREND_STATIONARY
 
             data.sectors[idx] = SectorData(
                 strike_count=count,
