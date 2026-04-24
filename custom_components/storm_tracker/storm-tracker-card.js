@@ -100,7 +100,6 @@ class StormTrackerCard extends HTMLElement {
   static getStubConfig() {
     return {
       entity_prefix: 'storm_tracker',
-      rings: DEFAULT_RINGS,
     };
   }
 
@@ -115,7 +114,6 @@ class StormTrackerCard extends HTMLElement {
     this._config = {
       title:         config.title         ?? 'Storm Tracker',
       entity_prefix: config.entity_prefix,
-      rings:         config.rings         ?? DEFAULT_RINGS,
       colors:        { ...DEFAULT_COLORS, ...(config.colors ?? {}) },
     };
     this._render();
@@ -202,21 +200,6 @@ class StormTrackerCard extends HTMLElement {
     }).join('\n');
   }
 
-  _svgRings(rings) {
-    const sorted  = [...rings].sort((a, b) => a - b);
-    const maxRing = sorted[sorted.length - 1];
-    return sorted.map((ring) => {
-      const r  = (ring / maxRing) * MAX_R;
-      // Ring label: just inside the top of the ring, nudged right of the N spoke
-      const lx = CX + 6;
-      const ly = CY - r + 11;
-      return `<circle cx="${CX}" cy="${CY}" r="${r.toFixed(2)}" ` +
-             `fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1" stroke-dasharray="5 4"/>\n` +
-             `<text x="${lx}" y="${ly}" fill="rgba(255,255,255,0.45)" ` +
-             `font-size="9" text-anchor="start" font-family="sans-serif">${ring}</text>`;
-    }).join('\n');
-  }
-
   _svgSpokes() {
     return Array.from({ length: 8 }, (_, i) => {
       const a  = compassToSVG(i * 45 - 22.5);
@@ -297,7 +280,6 @@ class StormTrackerCard extends HTMLElement {
 
     const sectors   = this._sectorData();
     const wedges    = this._svgWedges(sectors);
-    const rings     = this._svgRings(this._config.rings);
     const spokes    = this._svgSpokes();
     const outerRing = `<circle cx="${CX}" cy="${CY}" r="${MAX_R}" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>`;
     const centre    = `<circle cx="${CX}" cy="${CY}" r="5" fill="rgba(255,255,255,0.25)"/>`;
@@ -341,7 +323,6 @@ class StormTrackerCard extends HTMLElement {
             <!-- Radar -->
             <g>
               ${wedges}
-              ${rings}
               ${spokes}
               ${outerRing}
               ${labels}
