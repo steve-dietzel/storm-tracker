@@ -170,9 +170,10 @@ def _combined_trend(
 ) -> str:
     """Classify trend from centroid and leading-edge regression slopes.
 
-    Conservative toward APPROACHING: a single approaching signal is enough to
-    warn.  Conservative toward RECEDING: both signals must agree before the
-    storm is dismissed as moving away.
+    Conservative toward APPROACHING: either signal is enough to warn.
+    Conservative toward RECEDING: both signals must agree before dismissing
+    the threat.  This prevents the centroid (pulled by distant older strikes)
+    from triggering RECEDING when the closest threat hasn't moved away.
     """
     def _classify(slope: float | None) -> str | None:
         if slope is None:
@@ -194,7 +195,7 @@ def _combined_trend(
         return c
     if TREND_APPROACHING in (c, e):
         return TREND_APPROACHING
-    if TREND_RECEDING in (c, e):
+    if c == TREND_RECEDING and e == TREND_RECEDING:
         return TREND_RECEDING
     return TREND_STATIONARY
 
