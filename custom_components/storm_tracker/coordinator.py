@@ -190,7 +190,7 @@ def _combined_trend(
         return c
     if TREND_APPROACHING in (c, e):
         return TREND_APPROACHING
-    if c == TREND_RECEDING and e == TREND_RECEDING:
+    if TREND_RECEDING in (c, e):
         return TREND_RECEDING
     return TREND_STATIONARY
 
@@ -243,10 +243,9 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
     async def _async_update_data(self) -> StormTrackerData:
         """Snapshot HA state on the event loop, then compute in an executor."""
         try:
-            # Phase 1: read HA state machine on the event loop (thread-unsafe to do elsewhere)
-            snapshot = self._build_snapshot()
-            # Phase 2: pure math — safe to run off the event loop
-            return await self.hass.async_add_executor_job(self._compute, snapshot)
+            snapshot  = self._build_snapshot()
+            prev_data = self.data  # None on first run
+            return await self.hass.async_add_executor_job(self._compute, snapshot, prev_data)
         except Exception as exc:
             raise UpdateFailed(f"Storm Tracker update failed: {exc}") from exc
 
@@ -326,7 +325,7 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
         )
         return strikes
 
-    def _compute(self, snapshot: list[_Strike]) -> StormTrackerData:
+    def _compute(self, snapshot: list[_Strike], prev_data: StormTrackerData | None) -> StormTrackerData:
         """Compute sector statistics from pre-snapshotted strike data.
 
         Runs in an executor thread — must not access the HA state machine.
@@ -409,7 +408,15 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
                     threshold,
                 )
             else:
-                trend = TREND_STATIONARY
+                # Not enough distinct time groups — carry the previous trend
+                # forward so a briefly-quiet approaching storm doesn't flip to
+                # stationary until we have data proving it changed.
+                prev_trend = (
+                    prev_data.sectors[idx].trend
+                    if prev_data and prev_data.sectors[idx].trend != TREND_CLEAR
+                    else None
+                )
+                trend = prev_trend if prev_trend is not None else TREND_STATIONARY
 
             # Map positions use only the most recent CENTROID_WINDOW_MINUTES so the
             # pin reflects where the storm is now, not a smeared historical average.
