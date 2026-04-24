@@ -20,21 +20,17 @@ from .coordinator import StormTrackerCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-CARD_URL       = "/storm_tracker_card/storm-tracker-card.js"
-CARD_FILE      = os.path.join(os.path.dirname(__file__), "storm-tracker-card.js")
-INFO_CARD_URL  = "/storm_tracker_card/storm-tracker-info-card.js"
-INFO_CARD_FILE = os.path.join(os.path.dirname(__file__), "storm-tracker-info-card.js")
+CARD_URL  = "/storm_tracker_card/storm-tracker-card.js"
+CARD_FILE = os.path.join(os.path.dirname(__file__), "storm-tracker-card.js")
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Serve the Lovelace card JS files and tell the frontend to load them."""
-    await hass.http.async_register_static_paths([
-        StaticPathConfig(CARD_URL,      CARD_FILE,      cache_headers=False),
-        StaticPathConfig(INFO_CARD_URL, INFO_CARD_FILE, cache_headers=False),
-    ])
+    """Serve the Lovelace card JS and tell the frontend to load it."""
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(CARD_URL, CARD_FILE, cache_headers=False)]
+    )
     add_extra_js_url(hass, CARD_URL)
-    add_extra_js_url(hass, INFO_CARD_URL)
-    _LOGGER.info("Storm Tracker cards registered")
+    _LOGGER.info("Storm Tracker card registered at %s", CARD_URL)
     return True
 
 
