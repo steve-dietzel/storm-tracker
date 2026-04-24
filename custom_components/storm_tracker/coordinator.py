@@ -53,6 +53,10 @@ class SectorData:
     avg_distance: float | None = None
     closest_distance: float | None = None
     trend: str = TREND_CLEAR
+    centroid_lat: float | None = None
+    centroid_lon: float | None = None
+    edge_lat: float | None = None
+    edge_lon: float | None = None
 
 
 @dataclass
@@ -347,7 +351,9 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
             t0 = 0.0
 
         # Collect raw (timestamp_sec, distance) per sector before bucketing.
+        # Also collect (distance, lat, lon) per sector for centroid/edge map positions.
         sector_raw: dict[int, list[tuple[float, float]]] = {i: [] for i in range(8)}
+        sector_coords: dict[int, list[tuple[float, float, float]]] = {i: [] for i in range(8)}
 
         for entity_id, attrs, pub_time in snapshot:
             try:
@@ -375,6 +381,7 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
             az = _azimuth(home_lat, home_lon, strike_lat, strike_lon)
             sector = _sector_index(az)
             sector_raw[sector].append((pub_time.timestamp(), distance))
+            sector_coords[sector].append((distance, strike_lat, strike_lon))
 
         # Build SectorData per sector
         data = StormTrackerData()
@@ -401,14 +408,23 @@ class StormTrackerCoordinator(DataUpdateCoordinator[StormTrackerData]):
                     threshold,
                 )
             else:
-                # Not enough distinct time groups to measure movement.
                 trend = TREND_STATIONARY
+
+            # Map positions: centroid = mean lat/lon; edge = lat/lon of closest strike.
+            coords = sector_coords[idx]
+            centroid_lat = sum(c[1] for c in coords) / len(coords)
+            centroid_lon = sum(c[2] for c in coords) / len(coords)
+            edge_coord   = min(coords, key=lambda c: c[0])
 
             data.sectors[idx] = SectorData(
                 strike_count=count,
                 avg_distance=round(avg_dist, 1),
                 closest_distance=round(closest, 1),
                 trend=trend,
+                centroid_lat=centroid_lat,
+                centroid_lon=centroid_lon,
+                edge_lat=edge_coord[1],
+                edge_lon=edge_coord[2],
             )
             global_distances.extend(distances)
 

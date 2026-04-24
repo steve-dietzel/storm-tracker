@@ -2,7 +2,9 @@
 
 DOMAIN = "storm_tracker"
 
-PLATFORMS = ["sensor"]
+PLATFORMS = ["sensor", "geo_location"]
+
+GEO_ATTRIBUTION = "Data provided by Storm Tracker"
 
 # ---------------------------------------------------------------------------
 # Sector definitions
