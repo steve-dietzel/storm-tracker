@@ -115,6 +115,12 @@ Both pins carry a `trend` attribute showing the current sector state.
 
 ---
 
+## Credits
+
+The `geo_location` entity lifecycle pattern used in this integration (dispatcher-based removal, manager class, `async_remove(force_remove=True)`) is adapted from the [homeassistant-blitzortung](https://github.com/mrk-its/homeassistant-blitzortung) integration by [Marcin Kowalski (mrk-its)](https://github.com/mrk-its), used under the MIT License.
+
+---
+
 ## License
 
 MIT
