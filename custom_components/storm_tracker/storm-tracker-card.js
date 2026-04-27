@@ -376,7 +376,7 @@ class StormTrackerMiniCard extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config.entity_prefix) {
+    if (!config || !config.entity_prefix) {
       throw new Error('storm-tracker-mini-card: entity_prefix is required');
     }
     this._config = {
@@ -384,15 +384,26 @@ class StormTrackerMiniCard extends HTMLElement {
       navigate:      config.navigate ?? null,
       colors:        { ...DEFAULT_COLORS, ...(config.colors ?? {}) },
     };
-    this._render();
+    this._safeRender();
   }
 
   set hass(hass) {
     this._hass = hass;
-    this._render();
+    this._safeRender();
   }
 
   getCardSize() { return 2; }
+
+  _safeRender() {
+    try {
+      this._render();
+    } catch (e) {
+      this.shadowRoot.innerHTML =
+        `<ha-card style="padding:8px;color:var(--error-color,red);font-size:0.8rem">
+           Storm Mini: render error — ${e.message}
+         </ha-card>`;
+    }
+  }
 
   // Reuse sector data logic from the main card
   _sectorData() {
@@ -529,7 +540,7 @@ class StormTrackerInfoCard extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config.entity_prefix) {
+    if (!config || !config.entity_prefix) {
       throw new Error('storm-tracker-info-card: entity_prefix is required');
     }
     this._config = {
@@ -537,12 +548,23 @@ class StormTrackerInfoCard extends HTMLElement {
       entity_prefix: config.entity_prefix,
       colors:        { ...DEFAULT_COLORS, ...(config.colors ?? {}) },
     };
-    this._render();
+    this._safeRender();
   }
 
   set hass(hass) {
     this._hass = hass;
-    this._render();
+    this._safeRender();
+  }
+
+  _safeRender() {
+    try {
+      this._render();
+    } catch (e) {
+      this.shadowRoot.innerHTML =
+        `<ha-card style="padding:12px;color:var(--error-color,red);font-size:0.8rem">
+           Storm Activity: render error — ${e.message}
+         </ha-card>`;
+    }
   }
 
   getCardSize() { return 3; }
